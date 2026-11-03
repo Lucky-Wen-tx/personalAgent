@@ -1,0 +1,15 @@
+# 编译产物
+/Agent
+/Agent.exe
+*.exe
+
+# 环境变量（密钥）
+.env
+
+# IDE
+.idea/
+.vscode/
+
+# 系统文件
+.DS_Store
+Thumbs.db

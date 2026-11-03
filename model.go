@@ -52,7 +52,7 @@ var (
 )
 
 // ==================== 初始化 ====================
-func initialModel() Model {
+func initialModel(extraTools []*tools.ToolDef) Model {
 	// --- textarea ---
 	ta := textarea.New()
 	ta.Placeholder = "输入消息，Enter 发送"
@@ -67,7 +67,7 @@ func initialModel() Model {
 	// --- spinner（思考中动画）---
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
 
-	// --- session（和你原代码完全一致）---
+	// --- session---
 	session := core.NewSession()
 	session.AddMessage(
 		responses.ResponseInputItemParamOfMessage(
@@ -76,12 +76,14 @@ func initialModel() Model {
 		),
 	)
 
-	// --- 注册工具（和你原代码完全一致）---
-	llmTools := make(map[string]*tools.ToolDef)
-	for _, t := range []*tools.ToolDef{
+	// --- 注册工具（内置 + MCP）---
+	defs := []*tools.ToolDef{
 		tools.NewGetCurrentTime(),
 		tools.NewGetWeather(),
-	} {
+	}
+	defs = append(defs, extraTools...)
+	llmTools := make(map[string]*tools.ToolDef)
+	for _, t := range defs {
 		llmTools[t.Name] = t
 	}
 	// 转换为openai格式工具
@@ -90,7 +92,7 @@ func initialModel() Model {
 		openaiTools = append(openaiTools, t.ToParam())
 	}
 
-	// --- client（和你原代码完全一致）---
+	// --- client---
 	client := openai.NewClient(
 		option.WithAPIKey(apiKey),
 		option.WithBaseURL(baseURL),

@@ -66,40 +66,56 @@ func (m Model) callAgentRound() tea.Cmd {
 		var display []chatMessage
 		hasToolCall := false
 
+		// 先收集本轮所有 reasoning 文本，并判断是否发生了工具调用
+		var reasoningTexts []string
+		for _, item := range resp.Output {
+			if item.Type == "function_call" {
+				hasToolCall = true
+			}
+			if item.Type != "reasoning" {
+				continue
+			}
+			for _, c := range item.Content {
+				if c.Text != "" {
+					reasoningTexts = append(reasoningTexts, c.Text)
+				}
+			}
+			for _, s := range item.Summary {
+				if s.Text != "" {
+					reasoningTexts = append(reasoningTexts, s.Text)
+				}
+			}
+		}
+
+		// DeepSeek 要求带 tools 的请求中，每个工具调用轮都必须回传 reasoning_text。
+		// 模型本轮没输出思考文本时补一个占位符，否则下一轮请求会报 HTTP 400。
+		if hasToolCall && len(reasoningTexts) == 0 {
+			reasoningTexts = []string{" "}
+		}
+
+		// reasoning 必须写在 function_call 之前
+		if len(reasoningTexts) > 0 {
+			text := strings.Join(reasoningTexts, "\n")
+			if strings.TrimSpace(text) != "" {
+				display = append(display, chatMessage{Role: "think", Content: text})
+			}
+
+			contentBlocks := make([]responses.ResponseReasoningItemContentParam, 0, len(reasoningTexts))
+			for _, t := range reasoningTexts {
+				contentBlocks = append(contentBlocks, responses.ResponseReasoningItemContentParam{
+					Type: "reasoning_text",
+					Text: t,
+				})
+			}
+			session.AddMessage(responses.ResponseInputItemUnionParam{
+				OfReasoning: &responses.ResponseReasoningItemParam{
+					Content: contentBlocks,
+				},
+			})
+		}
+
 		for _, item := range resp.Output {
 			switch item.Type {
-
-			// ---------- 思考 ----------
-			case "reasoning":
-				var reasoningTexts []string
-				for _, c := range item.Content {
-					if c.Text != "" {
-						reasoningTexts = append(reasoningTexts, c.Text)
-					}
-				}
-				for _, s := range item.Summary {
-					if s.Text != "" {
-						reasoningTexts = append(reasoningTexts, s.Text)
-					}
-				}
-				if len(reasoningTexts) > 0 {
-					text := strings.Join(reasoningTexts, "\n")
-					display = append(display, chatMessage{Role: "think", Content: text})
-
-					// 回传 reasoning（和你原代码逻辑一致）
-					contentBlocks := make([]responses.ResponseReasoningItemContentParam, 0, len(reasoningTexts))
-					for _, t := range reasoningTexts {
-						contentBlocks = append(contentBlocks, responses.ResponseReasoningItemContentParam{
-							Type: "reasoning_text",
-							Text: t,
-						})
-					}
-					session.AddMessage(responses.ResponseInputItemUnionParam{
-						OfReasoning: &responses.ResponseReasoningItemParam{
-							Content: contentBlocks,
-						},
-					})
-				}
 
 			// ---------- 最终回答 ----------
 			case "message":
@@ -111,7 +127,6 @@ func (m Model) callAgentRound() tea.Cmd {
 
 			// ---------- 工具调用 ----------
 			case "function_call":
-				hasToolCall = true
 				fc := item.AsFunctionCall()
 
 				display = append(display, chatMessage{
