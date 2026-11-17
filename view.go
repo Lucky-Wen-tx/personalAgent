@@ -45,7 +45,9 @@ func (m *Model) refreshViewport() {
 		sb.WriteString("\n\n")
 	}
 	m.viewport.SetContent(sb.String())
-	m.viewport.GotoBottom()
+	if m.followBottom {
+		m.viewport.GotoBottom()
+	}
 }
 
 // ==================== View ====================

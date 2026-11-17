@@ -32,6 +32,10 @@ type Model struct {
 	loop     int
 	ready    bool
 
+	// followBottom 为 true 时，新消息到达自动滚到底部；
+	// 用户向上滚动后置为 false，保留当前位置，滚回底部时恢复。
+	followBottom bool
+
 	width  int
 	height int
 }
@@ -100,15 +104,16 @@ func initialModel(extraTools []*tools.ToolDef) Model {
 	)
 
 	return Model{
-		session:     session,
-		client:      client,
-		llmTools:    llmTools,
-		openaiTools: openaiTools,
-		textarea:    ta,
-		viewport:    vp,
-		spinner:     sp,
-		messages:    []chatMessage{},
-		state:       stateIdle,
+		session:      session,
+		client:       client,
+		llmTools:     llmTools,
+		openaiTools:  openaiTools,
+		textarea:     ta,
+		viewport:     vp,
+		spinner:      sp,
+		messages:     []chatMessage{},
+		state:        stateIdle,
+		followBottom: true,
 	}
 }
 

@@ -67,6 +67,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			)
 			m.state = stateThinking
 			m.loop = 0
+			// 发送消息后回到底部并跟随新回复
+			m.followBottom = true
 			m.refreshViewport()
 			return m, tea.Batch(m.spinner.Tick, m.callAgentRound())
 		}
@@ -106,6 +108,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.MouseButtonWheelUp, tea.MouseButtonWheelDown:
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
+			// 用户手动滚回底部时恢复自动跟随
+			m.followBottom = m.viewport.AtBottom()
 			return m, cmd
 		}
 
