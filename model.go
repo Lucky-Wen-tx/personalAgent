@@ -32,6 +32,10 @@ type Model struct {
 	loop     int
 	ready    bool
 
+	// skills 是已加载的技能包；loadedSkills 记录已注入会话的技能，避免重复注入
+	skills       []Skill
+	loadedSkills map[string]bool
+
 	// followBottom 为 true 时，新消息到达自动滚到底部；
 	// 用户向上滚动后置为 false，保留当前位置，滚回底部时恢复。
 	followBottom bool
@@ -56,7 +60,7 @@ var (
 )
 
 // ==================== 初始化 ====================
-func initialModel(extraTools []*tools.ToolDef) Model {
+func initialModel(extraTools []*tools.ToolDef, skills []Skill) Model {
 	// --- textarea ---
 	ta := textarea.New()
 	ta.Placeholder = "输入消息，Enter 发送"
@@ -80,10 +84,12 @@ func initialModel(extraTools []*tools.ToolDef) Model {
 		),
 	)
 
-	// --- 注册工具（内置 + MCP）---
+	// --- 注册工具（内置 + skill + MCP）---
+	loadedSkills := make(map[string]bool)
 	defs := []*tools.ToolDef{
 		tools.NewGetCurrentTime(),
 		tools.NewGetWeather(),
+		newLoadSkillTool(skills, session, loadedSkills),
 	}
 	defs = append(defs, extraTools...)
 	llmTools := make(map[string]*tools.ToolDef)
@@ -114,6 +120,8 @@ func initialModel(extraTools []*tools.ToolDef) Model {
 		messages:     []chatMessage{},
 		state:        stateIdle,
 		followBottom: true,
+		skills:       skills,
+		loadedSkills: loadedSkills,
 	}
 }
 

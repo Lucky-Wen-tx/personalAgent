@@ -15,8 +15,8 @@ import (
 const maxLoop = 10
 
 const (
-	baseURL   = "https://api.deepseek.com"
-	modelName = "deepseek-flash"
+	baseURL   = "https://api.beichenapi.com/v1"
+	modelName = "deepseek-v4.1-flash"
 )
 
 // apiKey 从环境变量读取，不要写进源码
@@ -50,7 +50,13 @@ func main() {
 		defer func() { _ = closeMCP() }()
 	}
 
-	p := tea.NewProgram(initialModel(mcpTools), tea.WithAltScreen(), tea.WithMouseCellMotion())
+	// 加载技能包（skills/ 目录下每个子目录一个 SKILL.md），失败时降级为无技能
+	skills, err := LoadSkills("skills")
+	if err != nil {
+		fmt.Println("技能加载失败，仅使用内置能力:", err)
+	}
+
+	p := tea.NewProgram(initialModel(mcpTools, skills), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Println("程序错误:", err)
 	}

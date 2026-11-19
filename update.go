@@ -45,6 +45,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "/clear":
 				m.messages = nil
 				m.session = core.NewSession()
+				// 会话重建后技能也需重新加载（clear 原地清空，保持与 load_skill 工具共享同一 map）
+				clear(m.loadedSkills)
 				m.session.AddMessage(
 					responses.ResponseInputItemParamOfMessage(
 						systemPrompt,
@@ -52,6 +54,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					),
 				)
 				m.textarea.Reset()
+				m.refreshViewport()
+				return m, nil
+			}
+
+			// /skill <名称>：手动加载技能
+			if input == "/skill" || strings.HasPrefix(input, "/skill ") {
+				name := strings.TrimSpace(strings.TrimPrefix(input, "/skill"))
+				if name == "" {
+					m.messages = append(m.messages, chatMessage{Role: "system", Content: "用法：/skill <技能名称>"})
+					m.refreshViewport()
+					return m, nil
+				}
+				msg, err := loadSkillIntoSession(m.skills, m.session, m.loadedSkills, name)
+				if err != nil {
+					m.messages = append(m.messages, chatMessage{Role: "error", Content: err.Error()})
+				} else {
+					m.messages = append(m.messages, chatMessage{Role: "system", Content: msg})
+				}
 				m.refreshViewport()
 				return m, nil
 			}

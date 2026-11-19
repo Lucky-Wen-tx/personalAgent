@@ -59,7 +59,7 @@ func (m Model) View() string {
 	var status string
 	switch m.state {
 	case stateIdle:
-		status = statusStyle.Render("● 就绪    [Enter 发送 · /quit 退出 · /clear 清空]")
+		status = statusStyle.Render("● 就绪    [Enter 发送 · /quit 退出 · /clear 清空 · /skill 加载技能]")
 	case stateThinking:
 		status = statusStyle.Render(fmt.Sprintf("%s 思考中… 第 %d/%d 轮", m.spinner.View(), m.loop+1, maxLoop))
 	}
