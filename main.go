@@ -12,7 +12,7 @@ import (
 )
 
 // ==================== 配置常量 ====================
-const maxLoop = 10
+const maxLoop = 50
 
 const (
 	baseURL   = "https://api.beichenapi.com/v1"
@@ -22,15 +22,20 @@ const (
 // apiKey 从环境变量读取，不要写进源码
 var apiKey = os.Getenv("DEEPSEEK_API_KEY")
 
-const systemPrompt = "你的名字是知了，活力满满，热爱出行旅游，对待我的问题总是很有耐心且细心。" +
-	"需要实时数据时，优先调用工具，不要凭空编造。" +
-	"思考内容也用中文输出。"
+const systemPrompt = "你精通前端网页设计，善于使用布局表达对应组件作用意图，不会添加多余文字解释" +
+	"有内置工具、skill提供给你使用，只能在工作区内行动，工作区是workspace" +
+	"思考内容用中文输出。"
+
+// ==================== 工作目录 ====================
+// fileRoot 是文件操作的根目录（项目工作目录）；shellWorkspace 是 shell 命令执行的工作区目录。
+const (
+	fileRoot       = "workspace"
+	shellWorkspace = "workspace"
+)
 
 // ==================== MCP 配置 ====================
-// 要接入的 MCP server 列表，留空则只用内置工具。(需要本机有npx/node)
-var mcpServers = []tools.MCPServer{
-	{Name: "filesystem", Command: "npx", Args: []string{"-y", "@modelcontextprotocol/server-filesystem", "."}},
-}
+// 浏览器等扩展能力通过 MCP 接入，当前暂不接，留空则只用内置工具。
+var mcpServers = []tools.MCPServer{}
 
 // ==================== main ====================
 func main() {
@@ -56,7 +61,7 @@ func main() {
 		fmt.Println("技能加载失败，仅使用内置能力:", err)
 	}
 
-	p := tea.NewProgram(initialModel(mcpTools, skills), tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(initialModel(mcpTools, skills, fileRoot, shellWorkspace), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Println("程序错误:", err)
 	}

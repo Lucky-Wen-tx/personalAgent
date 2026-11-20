@@ -40,6 +40,10 @@ type Model struct {
 	// 用户向上滚动后置为 false，保留当前位置，滚回底部时恢复。
 	followBottom bool
 
+	// pendingApproval 当前等待用户确认的命令；pendingQueue 是同轮剩余待审批命令。
+	pendingApproval *pendingTool
+	pendingQueue    []pendingTool
+
 	width  int
 	height int
 }
@@ -60,7 +64,7 @@ var (
 )
 
 // ==================== 初始化 ====================
-func initialModel(extraTools []*tools.ToolDef, skills []Skill) Model {
+func initialModel(extraTools []*tools.ToolDef, skills []Skill, fileRoot, shellWorkspace string) Model {
 	// --- textarea ---
 	ta := textarea.New()
 	ta.Placeholder = "输入消息，Enter 发送"
@@ -87,10 +91,11 @@ func initialModel(extraTools []*tools.ToolDef, skills []Skill) Model {
 	// --- 注册工具（内置 + skill + MCP）---
 	loadedSkills := make(map[string]bool)
 	defs := []*tools.ToolDef{
-		tools.NewGetCurrentTime(),
-		tools.NewGetWeather(),
 		newLoadSkillTool(skills, session, loadedSkills),
 	}
+	defs = append(defs, tools.NewFileTools(fileRoot)...)
+	defs = append(defs, tools.NewHTTPTool())
+	defs = append(defs, tools.NewShellTool(shellWorkspace))
 	defs = append(defs, extraTools...)
 	llmTools := make(map[string]*tools.ToolDef)
 	for _, t := range defs {

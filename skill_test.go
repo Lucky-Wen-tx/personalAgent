@@ -25,6 +25,21 @@ func TestParseSkill(t *testing.T) {
 	}
 }
 
+func TestParseSkillCRLF(t *testing.T) {
+	// Windows 记事本等编辑器产出的 CRLF 换行应被兼容
+	content := "---\r\nname: translate\r\ndescription: 中英互译\r\n---\r\n正文第一行\r\n正文第二行\r\n"
+	s, err := parseSkill(content)
+	if err != nil {
+		t.Fatalf("CRLF 解析出错: %v", err)
+	}
+	if s.Name != "translate" {
+		t.Errorf("name = %q, want translate", s.Name)
+	}
+	if s.Instructions != "正文第一行\n正文第二行" {
+		t.Errorf("instructions = %q", s.Instructions)
+	}
+}
+
 func TestParseSkillInvalid(t *testing.T) {
 	for name, content := range map[string]string{
 		"无 frontmatter":   "正文",

@@ -20,6 +20,7 @@ type agentState int
 const (
 	stateIdle agentState = iota
 	stateThinking
+	stateAwaitingApproval
 )
 
 // ==================== 聊天消息 ====================
@@ -33,6 +34,20 @@ type chatMessage struct {
 type agentRoundMsg struct {
 	display     []chatMessage
 	hasToolCall bool
+	pending     []pendingTool
+}
+
+// pendingTool 是一个需要人工审批才能执行的工具调用，审批通过前不执行、不写回输出。
+type pendingTool struct {
+	name   string
+	callID string
+	args   string
+	reason string
+}
+
+// toolDoneMsg 是审批通过后工具执行完成的消息，携带结果供展示并触发下一轮循环。
+type toolDoneMsg struct {
+	display []chatMessage
 }
 
 // API 或工具执行出错
@@ -68,6 +83,7 @@ func (m Model) callAgentRound() tea.Cmd {
 
 		// 先收集本轮所有 reasoning 文本，并判断是否发生了工具调用
 		var reasoningTexts []string
+		var pending []pendingTool
 		for _, item := range resp.Output {
 			if item.Type == "function_call" {
 				hasToolCall = true
@@ -143,7 +159,22 @@ func (m Model) callAgentRound() tea.Cmd {
 					},
 				})
 
-				// 4.2 执行工具
+				// 4.2 预检：危险命令挂起等待人工审批，其余直接执行
+				t, ok := llmTools[fc.Name]
+				needApproval, reason := false, ""
+				if ok && t.PreCheck != nil {
+					needApproval, reason = t.PreCheck(fc.Arguments)
+				}
+				if needApproval {
+					pending = append(pending, pendingTool{
+						name:   fc.Name,
+						callID: fc.CallID,
+						args:   fc.Arguments,
+						reason: reason,
+					})
+					continue
+				}
+
 				toolResult := runTool(ctx, llmTools, fc.Name, fc.Arguments)
 				display = append(display, chatMessage{
 					Role:    "tool_result",
@@ -162,7 +193,7 @@ func (m Model) callAgentRound() tea.Cmd {
 			}
 		}
 
-		return agentRoundMsg{display: display, hasToolCall: hasToolCall}
+		return agentRoundMsg{display: display, hasToolCall: hasToolCall, pending: pending}
 	}
 }
 
@@ -181,6 +212,27 @@ func runTool(
 		return fmt.Sprintf(`{"error":%q}`, err.Error())
 	}
 	return out
+}
+
+// executePendingTool 审批通过后执行挂起的工具调用，写回 function_call_output，
+// 返回 toolDoneMsg 供 Update 展示结果并触发下一轮循环。
+func (m Model) executePendingTool(p pendingTool) tea.Cmd {
+	session := m.session
+	llmTools := m.llmTools
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+		defer cancel()
+		toolResult := runTool(ctx, llmTools, p.name, p.args)
+		session.AddMessage(responses.ResponseInputItemUnionParam{
+			OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
+				CallID: openai.String(p.callID),
+				Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
+					OfString: openai.String(toolResult),
+				},
+			},
+		})
+		return toolDoneMsg{display: []chatMessage{{Role: "tool_result", Content: toolResult}}}
+	}
 }
 
 func formatErr(err error) string {

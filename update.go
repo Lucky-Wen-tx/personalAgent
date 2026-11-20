@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/responses"
 )
 
@@ -29,6 +30,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "enter":
+			// 审批等待中：enter 确认执行
+			if m.state == stateAwaitingApproval && m.pendingApproval != nil {
+				p := *m.pendingApproval
+				m.pendingApproval = nil
+				m.state = stateThinking
+				return m, tea.Batch(m.spinner.Tick, m.executePendingTool(p))
+			}
 			// 思考中：不允许发送
 			if m.state != stateIdle {
 				return m, nil
@@ -91,12 +99,63 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.followBottom = true
 			m.refreshViewport()
 			return m, tea.Batch(m.spinner.Tick, m.callAgentRound())
+
+		case "y":
+			if m.state == stateAwaitingApproval && m.pendingApproval != nil {
+				p := *m.pendingApproval
+				m.pendingApproval = nil
+				m.state = stateThinking
+				return m, tea.Batch(m.spinner.Tick, m.executePendingTool(p))
+			}
+
+		case "n", "esc":
+			if m.state == stateAwaitingApproval && m.pendingApproval != nil {
+				p := *m.pendingApproval
+				m.pendingApproval = nil
+				rejectResult := `{"error":"用户拒绝执行该命令"}`
+				m.session.AddMessage(responses.ResponseInputItemUnionParam{
+					OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
+						CallID: openai.String(p.callID),
+						Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
+							OfString: openai.String(rejectResult),
+						},
+					},
+				})
+				m.messages = append(m.messages, chatMessage{Role: "tool_result", Content: rejectResult})
+				// 取队列下一个审批
+				if len(m.pendingQueue) > 0 {
+					m.pendingApproval = &m.pendingQueue[0]
+					m.pendingQueue = m.pendingQueue[1:]
+					m.state = stateAwaitingApproval
+					m.refreshViewport()
+					return m, nil
+				}
+				// 无剩余挂起，继续下一轮
+				if m.loop < maxLoop {
+					m.state = stateThinking
+					m.refreshViewport()
+					return m, tea.Batch(m.spinner.Tick, m.callAgentRound())
+				}
+				m.state = stateIdle
+				m.messages = append(m.messages, chatMessage{Role: "error", Content: "达到最大循环次数，强制结束"})
+				m.refreshViewport()
+				return m, nil
+			}
 		}
 
 	// ---------- 一轮 Agent 循环完成 ----------
 	case agentRoundMsg:
 		m.messages = append(m.messages, msg.display...)
 		m.loop++
+
+		// 有需要审批的命令：进入审批状态，暂停循环
+		if len(msg.pending) > 0 {
+			m.pendingApproval = &msg.pending[0]
+			m.pendingQueue = msg.pending[1:]
+			m.state = stateAwaitingApproval
+			m.refreshViewport()
+			return m, nil
+		}
 
 		if msg.hasToolCall && m.loop < maxLoop {
 			m.refreshViewport()
@@ -119,6 +178,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Role: "error", Content: formatErr(msg.err),
 		})
 		m.state = stateIdle
+		m.refreshViewport()
+		return m, nil
+
+	// ---------- 审批通过后工具执行完成 ----------
+	case toolDoneMsg:
+		m.messages = append(m.messages, msg.display...)
+		// 取队列下一个审批
+		if len(m.pendingQueue) > 0 {
+			m.pendingApproval = &m.pendingQueue[0]
+			m.pendingQueue = m.pendingQueue[1:]
+			m.state = stateAwaitingApproval
+			m.refreshViewport()
+			return m, nil
+		}
+		// 无剩余挂起，继续下一轮
+		if m.loop < maxLoop {
+			m.refreshViewport()
+			return m, tea.Batch(m.spinner.Tick, m.callAgentRound())
+		}
+		m.state = stateIdle
+		m.messages = append(m.messages, chatMessage{Role: "error", Content: "达到最大循环次数，强制结束"})
 		m.refreshViewport()
 		return m, nil
 

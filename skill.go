@@ -52,6 +52,8 @@ func LoadSkills(dir string) ([]Skill, error) {
 
 // parseSkill 解析 SKILL.md：--- 包裹的 frontmatter 声明 name/description，其后为正文。
 func parseSkill(content string) (Skill, error) {
+	// 兼容 Windows 记事本等编辑器产出的 CRLF 换行，统一成 LF
+	content = strings.ReplaceAll(content, "\r\n", "\n")
 	const delim = "---"
 	if !strings.HasPrefix(content, delim+"\n") {
 		return Skill{}, fmt.Errorf("缺少 frontmatter")

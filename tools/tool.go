@@ -17,6 +17,8 @@ type ToolDef struct {
 	// Parameters 必须符合 JSON Schema 格式
 	Parameters map[string]any
 	Handler    Handler
+	// PreCheck 可选的预检：返回是否需要人工审批及原因。为 nil 表示无需审批。
+	PreCheck func(args string) (needApproval bool, reason string)
 }
 
 // ToParam 转换成 OpenAI Responses API 的工具参数

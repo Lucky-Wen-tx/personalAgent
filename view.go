@@ -62,6 +62,12 @@ func (m Model) View() string {
 		status = statusStyle.Render("● 就绪    [Enter 发送 · /quit 退出 · /clear 清空 · /skill 加载技能]")
 	case stateThinking:
 		status = statusStyle.Render(fmt.Sprintf("%s 思考中… 第 %d/%d 轮", m.spinner.View(), m.loop+1, maxLoop))
+	case stateAwaitingApproval:
+		cmdText := ""
+		if m.pendingApproval != nil {
+			cmdText = fmt.Sprintf("%s(%s)", m.pendingApproval.name, m.pendingApproval.args)
+		}
+		status = statusStyle.Render(fmt.Sprintf("⚠ 需确认执行：%s   [y] 执行 / [n] 拒绝", cmdText))
 	}
 
 	viewportBox := borderStyle.Width(m.width - 2).Render(m.viewport.View())
