@@ -1,6 +1,7 @@
 package main
 
 import (
+	"sort"
 	"time"
 
 	"Agent/core"
@@ -43,6 +44,10 @@ type Model struct {
 	// pendingApproval 当前等待用户确认的命令；pendingQueue 是同轮剩余待审批命令。
 	pendingApproval *pendingTool
 	pendingQueue    []pendingTool
+
+	// pendingImages 暂存本轮工具返回的图片（callID → 图片），只在紧接着的一次请求里附上；
+	// 会话历史里始终只保留文本，避免 base64 每轮重复发送把上下文撑爆。
+	pendingImages map[string][]tools.Image
 
 	width  int
 	height int
@@ -94,17 +99,29 @@ func initialModel(extraTools []*tools.ToolDef, skills []Skill, fileRoot, shellWo
 		newLoadSkillTool(skills, session, loadedSkills),
 	}
 	defs = append(defs, tools.NewFileTools(fileRoot)...)
+	defs = append(defs, tools.NewImageTools(fileRoot)...)
+	defs = append(defs, tools.NewCodeTools(fileRoot)...)
+	defs = append(defs, tools.NewPreviewTools(fileRoot)...)
 	defs = append(defs, tools.NewHTTPTool())
-	defs = append(defs, tools.NewShellTool(shellWorkspace))
+	defs = append(defs, tools.NewShellTools(shellWorkspace)...)
 	defs = append(defs, extraTools...)
 	llmTools := make(map[string]*tools.ToolDef)
 	for _, t := range defs {
+		// 同名工具只保留先注册的：内置工具优先，避免 MCP 用同名工具顶替需要审批的 run_shell
+		if _, ok := llmTools[t.Name]; ok {
+			continue
+		}
 		llmTools[t.Name] = t
 	}
-	// 转换为openai格式工具
+	// 转换为openai格式工具（按名称排序，保证每次启动的工具顺序一致）
+	names := make([]string, 0, len(llmTools))
+	for n := range llmTools {
+		names = append(names, n)
+	}
+	sort.Strings(names)
 	openaiTools := make([]responses.ToolUnionParam, 0, len(llmTools))
-	for _, t := range llmTools {
-		openaiTools = append(openaiTools, t.ToParam())
+	for _, n := range names {
+		openaiTools = append(openaiTools, llmTools[n].ToParam())
 	}
 
 	// --- client---
@@ -115,18 +132,19 @@ func initialModel(extraTools []*tools.ToolDef, skills []Skill, fileRoot, shellWo
 	)
 
 	return Model{
-		session:      session,
-		client:       client,
-		llmTools:     llmTools,
-		openaiTools:  openaiTools,
-		textarea:     ta,
-		viewport:     vp,
-		spinner:      sp,
-		messages:     []chatMessage{},
-		state:        stateIdle,
-		followBottom: true,
-		skills:       skills,
-		loadedSkills: loadedSkills,
+		session:       session,
+		client:        client,
+		llmTools:      llmTools,
+		openaiTools:   openaiTools,
+		pendingImages: make(map[string][]tools.Image),
+		textarea:      ta,
+		viewport:      vp,
+		spinner:       sp,
+		messages:      []chatMessage{},
+		state:         stateIdle,
+		followBottom:  true,
+		skills:        skills,
+		loadedSkills:  loadedSkills,
 	}
 }
 

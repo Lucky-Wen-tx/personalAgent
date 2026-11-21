@@ -13,3 +13,6 @@
 # 系统文件
 .DS_Store
 Thumbs.db
+
+# Playwright MCP screenshots
+.playwright-mcp/

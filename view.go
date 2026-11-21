@@ -44,10 +44,20 @@ func (m *Model) refreshViewport() {
 		}
 		sb.WriteString("\n\n")
 	}
-	m.viewport.SetContent(sb.String())
+	m.viewport.SetContent(m.wrapContent(sb.String()))
 	if m.followBottom {
 		m.viewport.GotoBottom()
 	}
+}
+
+// wrapContent 按 viewport 宽度自动换行。viewport 自身不会换行，超宽行会被直接裁掉，
+// 导致模型的长回复（代码块、JSON、长命令等）后半段看不到。
+func (m *Model) wrapContent(content string) string {
+	w := m.viewport.Width
+	if w <= 0 {
+		return content
+	}
+	return lipgloss.NewStyle().Width(w).Render(content)
 }
 
 // ==================== View ====================

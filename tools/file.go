@@ -62,12 +62,11 @@ func NewFileTools(root string) []*ToolDef {
 			if err != nil {
 				return "", fmt.Errorf("读取文件失败: %w", err)
 			}
-			content := string(data)
-			const maxLen = 8000
-			if len(content) > maxLen {
-				content = content[:maxLen] + fmt.Sprintf("\n...（已截断，共 %d 字符）", len(content))
+			if isBinary(data) {
+				return "", fmt.Errorf("这是二进制文件（%d 字节），不支持直接读取", len(data))
 			}
-			return content, nil
+			// 按字符截断并保留尾部，避免切断多字节字符、也避免丢掉文件末尾的内容
+			return truncateOutput(string(data), maxToolOutput), nil
 		},
 	}
 
