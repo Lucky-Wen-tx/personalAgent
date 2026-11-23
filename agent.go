@@ -65,7 +65,7 @@ func (m Model) callAgentRound() tea.Cmd {
 	memory := m.memory
 
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
 		defer cancel()
 
 		resp, err := client.Responses.New(ctx, responses.ResponseNewParams{

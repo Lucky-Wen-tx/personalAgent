@@ -19,10 +19,14 @@ const (
 	modelName = "deepseek-v4.1-flash"
 )
 
+// requestTimeout 是单轮模型请求的上限。写整页 HTML 时模型可能连续生成几分钟，
+// 120 秒容易撞上 context deadline exceeded，放宽到 5 分钟。
+const requestTimeout = 300 * time.Second
+
 // apiKey 从环境变量读取，不要写进源码
 var apiKey = os.Getenv("DEEPSEEK_API_KEY")
 
-const systemPrompt = "你精通前端网页设计，会先判断需要什么素材，自行到网络上搜集" +
+const systemPrompt = "你精通前端网页设计，会先判断需要什么素材，自行到网络上搜集。最后的测试过程不要太长。" +
 	"有内置工具、skill提供给你使用，只能在工作区内行动，工作区是workspace" +
 	"思考内容用中文输出。"
 

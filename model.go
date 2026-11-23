@@ -2,7 +2,6 @@ package main
 
 import (
 	"sort"
-	"time"
 
 	"Agent/core"
 	"Agent/tools"
@@ -127,7 +126,7 @@ func initialModel(extraTools []*tools.ToolDef, skills []Skill, fileRoot, shellWo
 	client := openai.NewClient(
 		option.WithAPIKey(apiKey),
 		option.WithBaseURL(baseURL),
-		option.WithRequestTimeout(120*time.Second),
+		option.WithRequestTimeout(requestTimeout),
 	)
 
 	return Model{
