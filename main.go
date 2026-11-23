@@ -67,7 +67,13 @@ func main() {
 	p := tea.NewProgram(initialModel(mcpTools, skills, fileRoot, shellWorkspace), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	// 退出时结束后台任务，避免 dev server 之类的子进程残留
 	defer tools.CloseShellJobs()
-	if _, err := p.Run(); err != nil {
+	finalModel, err := p.Run()
+	if err != nil {
 		fmt.Println("程序错误:", err)
+		return
+	}
+	// 退出的最后一件事：把本次对话并进长期记忆
+	if fm, ok := finalModel.(Model); ok {
+		fm.saveMemoryOnExit()
 	}
 }

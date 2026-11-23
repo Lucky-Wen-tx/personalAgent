@@ -62,6 +62,7 @@ func (m Model) callAgentRound() tea.Cmd {
 	client := m.client
 	llmTools := m.llmTools
 	openaiTools := m.openaiTools
+	memory := m.memory
 
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -70,7 +71,7 @@ func (m Model) callAgentRound() tea.Cmd {
 		resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
 			Model: modelName,
 			Input: responses.ResponseNewParamsInputUnion{
-				OfInputItemList: session.GetMessages(),
+				OfInputItemList: withMemory(session.GetMessages(), memory),
 			},
 			Tools: openaiTools,
 		})

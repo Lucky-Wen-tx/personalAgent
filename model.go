@@ -45,6 +45,10 @@ type Model struct {
 	pendingApproval *pendingTool
 	pendingQueue    []pendingTool
 
+	// memory 是跨会话的长期记忆（workspace/memory.md 的内容），
+	// 每轮请求前临时拼进 system 消息，不写进 session。
+	memory string
+
 	width  int
 	height int
 }
@@ -131,6 +135,7 @@ func initialModel(extraTools []*tools.ToolDef, skills []Skill, fileRoot, shellWo
 		client:       client,
 		llmTools:     llmTools,
 		openaiTools:  openaiTools,
+		memory:       LoadMemory(),
 		textarea:     ta,
 		viewport:     vp,
 		spinner:      sp,

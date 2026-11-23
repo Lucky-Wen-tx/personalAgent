@@ -64,6 +64,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textarea.Reset()
 				m.refreshViewport()
 				return m, nil
+			case "/memory":
+				// 生成长期记忆需要调模型，不能阻塞 TUI，转成后台任务
+				m.textarea.Reset()
+				m.messages = append(m.messages, chatMessage{Role: "system", Content: "正在整理长期记忆…"})
+				m.refreshViewport()
+				return m, m.summarizeMemoryCmd()
 			}
 
 			// /skill <名称>：手动加载技能
@@ -199,6 +205,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.state = stateIdle
 		m.messages = append(m.messages, chatMessage{Role: "error", Content: "达到最大循环次数，强制结束"})
+		m.refreshViewport()
+		return m, nil
+
+	// ---------- 长期记忆生成完成 ----------
+	case memoryMsg:
+		if msg.err != nil {
+			m.messages = append(m.messages, chatMessage{Role: "error", Content: "记忆生成失败: " + msg.err.Error()})
+		} else {
+			m.memory = msg.content
+			m.messages = append(m.messages, chatMessage{Role: "system", Content: memorySummary(msg.content)})
+		}
 		m.refreshViewport()
 		return m, nil
 
