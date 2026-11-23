@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"runtime"
 	"time"
 
 	"Agent/tools"
@@ -35,26 +34,8 @@ const (
 )
 
 // ==================== MCP 配置 ====================
-// 接一个浏览器 MCP，给智能体「看图」的能力：打开自己写的页面、截图、看渲染结果。
-// 默认用系统自带的 Edge（--browser msedge），省掉下载 Chromium；不需要时设 AGENT_NO_BROWSER=1。
-var mcpServers = defaultMCPServers()
-
-func defaultMCPServers() []tools.MCPServer {
-	if os.Getenv("AGENT_NO_BROWSER") != "" {
-		return nil
-	}
-	args := []string{
-		"-y", "@playwright/mcp@latest",
-		"--headless",                 // 不弹窗口
-		"--isolated",                 // profile 只放内存，不碰本地浏览器数据
-		"--image-responses", "allow", // 截图以图片内容返回，模型才看得到
-		"--console-level", "warning", // 顺手带回控制台告警
-	}
-	if runtime.GOOS == "windows" {
-		args = append(args, "--browser", "msedge") // 用系统 Edge，免下载
-	}
-	return []tools.MCPServer{{Name: "browser", Command: "npx", Args: args}}
-}
+// 浏览器等扩展能力通过 MCP 接入，当前暂不接，留空则只用内置工具。
+var mcpServers = []tools.MCPServer{}
 
 // ==================== main ====================
 func main() {

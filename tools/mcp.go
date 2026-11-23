@@ -137,11 +137,11 @@ func mcpToolDef(c *client.Client, mt mcp.Tool) *ToolDef {
 		Name:        name,
 		Description: mt.Description,
 		Parameters:  schema,
-		RichHandler: func(ctx context.Context, args string) (Result, error) {
+		Handler: func(ctx context.Context, args string) (string, error) {
 			arguments := map[string]any{}
 			if strings.TrimSpace(args) != "" {
 				if err := json.Unmarshal([]byte(args), &arguments); err != nil {
-					return Result{}, fmt.Errorf("参数解析失败: %w", err)
+					return "", fmt.Errorf("参数解析失败: %w", err)
 				}
 			}
 			res, err := c.CallTool(ctx, mcp.CallToolRequest{Params: mcp.CallToolParams{
@@ -149,46 +149,27 @@ func mcpToolDef(c *client.Client, mt mcp.Tool) *ToolDef {
 				Arguments: arguments,
 			}})
 			if err != nil {
-				return Result{}, err
+				return "", err
 			}
-			text, images := mcpContentParts(res.Content)
+			text := mcpContentText(res.Content)
 			if res.IsError {
 				if text == "" {
 					text = "工具执行失败"
 				}
-				return Result{}, errors.New(text)
+				return "", errors.New(text)
 			}
-			return Result{Text: text, Images: images}, nil
+			return text, nil
 		},
 	}
 }
 
-// mcpContentParts 拆出 content 块里的文本与图片。
-// 图片是「看图能力」的关键：截图、参考图都从这里进入模型，不能像以前那样丢掉。
-func mcpContentParts(contents []mcp.Content) (string, []Image) {
-	var (
-		texts  []string
-		images []Image
-	)
+// mcpContentText 拼接 content 块里的文本，非文本块（图片等）忽略。
+func mcpContentText(contents []mcp.Content) string {
+	var parts []string
 	for _, c := range contents {
-		switch v := c.(type) {
-		case mcp.TextContent:
-			texts = append(texts, v.Text)
-		case mcp.ImageContent:
-			if v.Data == "" {
-				continue
-			}
-			mime := v.MIMEType
-			if mime == "" {
-				mime = "image/png"
-			}
-			// 单张图过大时不塞进请求，改为文字提示，避免请求直接被拒
-			if len(v.Data) > maxImageBase64 {
-				texts = append(texts, fmt.Sprintf("（一张 %s 图片过大，已跳过，约 %d KB）", mime, len(v.Data)/1024))
-				continue
-			}
-			images = append(images, Image{MIME: mime, Base64: v.Data})
+		if tc, ok := c.(mcp.TextContent); ok {
+			parts = append(parts, tc.Text)
 		}
 	}
-	return strings.Join(texts, "\n"), images
+	return strings.Join(parts, "\n")
 }

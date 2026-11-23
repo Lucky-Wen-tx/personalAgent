@@ -10,7 +10,7 @@
   - 文件：`read_file` / `write_file` / `list_dir`
   - 增量改码：`read_lines`（带行号、offset/limit）/ `edit_file`（精确替换）/ `glob` / `grep`
   - 预览与自检：`preview_start` / `preview_stop`（本地静态服务器）/ `html_check`（doctype、viewport、alt、重复 id、死链等静态检查）
-  - 其他：`read_image`（看图：参考图、设计稿、截图）、`run_shell`（超时可配、输出保头保尾、危险命令需 y/n 审批）、`job_output` / `job_kill` / `job_list`（后台长任务）、`http_request`、`load_skill`
+  - 其他：`run_shell`（超时可配、输出保头保尾、危险命令需 y/n 审批）、`job_output` / `job_kill` / `job_list`（后台长任务）、`http_request`、`load_skill`
 - 技能包：`skills/` 下每个子目录一个 `SKILL.md`，由 `load_skill` 注入
 - MCP 支持：stdio / streamable HTTP，单个 server 失败不影响其他 server
 
@@ -58,33 +58,14 @@ go run .
 - `/clear` 清空对话
 - `/quit` 或 `Ctrl+C` 退出
 
-## 看图
-
-智能体要「看见」自己写的页面，靠两件事：
-
-1. **内置 `read_image`**：读取工作区里的 png / jpeg / gif / webp，直接作为图片交给模型（参考图、设计稿都走它）。
-2. **MCP 浏览器截图**：启动时自动连接 `@playwright/mcp`，提供 `browser_navigate` / `browser_take_screenshot` 等工具。
-   默认无头、内存 profile、用系统自带 Edge（Windows 下免下载 Chromium）：
-
-   ```
-   npx -y @playwright/mcp@latest --headless --isolated --image-responses allow --browser msedge
-   ```
-
-图片走的是「一次性」链路：只在紧接着的那一轮请求里作为 `function_call_output` 的图片内容发出去，
-会话历史里只留一行文字说明，避免 base64 每轮重复占用上下文。
-如果模型或网关不支持图片输入，会自动去掉图片重试一次并在界面上提示，不会让整轮请求失败。
-
-不需要浏览器时设 `AGENT_NO_BROWSER=1` 启动，即只保留内置工具。
-
 ## 接入 MCP
 
-编辑 `main.go` 的 `defaultMCPServers()`，例如再加一个远程 MCP：
+编辑 `main.go` 的 `mcpServers`，例如接一个远程 MCP：
 
 ```go
-return []tools.MCPServer{
-	{Name: "browser", Command: "npx", Args: []string{"-y", "@playwright/mcp@latest", "--headless"}},
+var mcpServers = []tools.MCPServer{
 	{Name: "remote", URL: "https://example.com/mcp"},
 }
 ```
 
-需要本机有 Node/npx。单个 server 连接失败只会丢掉它自己的工具，不影响其他 server 和内置工具。
+stdio 方式填 `Command` / `Args` / `Env`。需要本机有 Node/npx。单个 server 连接失败只会丢掉它自己的工具，不影响其他 server 和内置工具。

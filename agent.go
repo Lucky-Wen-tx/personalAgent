@@ -62,44 +62,23 @@ func (m Model) callAgentRound() tea.Cmd {
 	client := m.client
 	llmTools := m.llmTools
 	openaiTools := m.openaiTools
-	pendingImages := m.pendingImages
 
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 		defer cancel()
 
-		newParams := func(items []responses.ResponseInputItemUnionParam) responses.ResponseNewParams {
-			return responses.ResponseNewParams{
-				Model: modelName,
-				Input: responses.ResponseNewParamsInputUnion{OfInputItemList: items},
-				Tools: openaiTools,
-			}
-		}
-
-		// 图片只在这一轮请求里附上：会话历史里始终是纯文本，
-		// 否则 base64 会跟着每一轮请求反复发送，几轮就撑爆上下文。
-		input, attached := withImages(session.GetMessages(), pendingImages)
-		resp, err := client.Responses.New(ctx, newParams(input))
-		degraded := ""
-		if err != nil && attached {
-			// 模型或网关不支持图片输入时，去掉图片重试一次，别让这一轮直接报废
-			resp, err = client.Responses.New(ctx, newParams(session.GetMessages()))
-			if err == nil {
-				degraded = "当前模型/网关不接受图片输入，本轮已降级为纯文本；图片请改用 html_check 或直接看文件。"
-			}
-		}
+		resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
+			Model: modelName,
+			Input: responses.ResponseNewParamsInputUnion{
+				OfInputItemList: session.GetMessages(),
+			},
+			Tools: openaiTools,
+		})
 		if err != nil {
 			return agentErrMsg{err: err}
 		}
-		// 图片已随本轮发出（或确认无法发送），不再重复使用
-		for id := range pendingImages {
-			delete(pendingImages, id)
-		}
 
 		var display []chatMessage
-		if degraded != "" {
-			display = append(display, chatMessage{Role: "error", Content: degraded})
-		}
 		hasToolCall := false
 
 		// 先收集本轮所有 reasoning 文本，并判断是否发生了工具调用
@@ -199,15 +178,18 @@ func (m Model) callAgentRound() tea.Cmd {
 				res := runTool(ctx, llmTools, fc.Name, fc.Arguments)
 				display = append(display, chatMessage{
 					Role:    "tool_result",
-					Content: displayText(res),
+					Content: res,
 				})
-				// 图片挂到 callID 上，下一轮请求里随 function_call_output 一起发出
-				if len(res.Images) > 0 {
-					pendingImages[fc.CallID] = res.Images
-				}
 
-				// 4.3 写回 function_call_output（历史里只放文本，图片不落库）
-				session.AddMessage(functionCallOutput(fc.CallID, res))
+				// 4.3 写回 function_call_output
+				session.AddMessage(responses.ResponseInputItemUnionParam{
+					OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
+						CallID: openai.String(fc.CallID),
+						Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
+							OfString: openai.String(res),
+						},
+					},
+				})
 			}
 		}
 
@@ -220,92 +202,16 @@ func runTool(
 	ctx context.Context,
 	llmTools map[string]*tools.ToolDef,
 	name, args string,
-) tools.Result {
+) string {
 	t, ok := llmTools[name]
 	if !ok {
-		return tools.Result{Text: fmt.Sprintf(`{"error":"未知工具: %s"}`, name)}
+		return fmt.Sprintf(`{"error":"未知工具: %s"}`, name)
 	}
-	res, err := t.Call(ctx, args)
+	out, err := t.Call(ctx, args)
 	if err != nil {
-		return tools.Result{Text: fmt.Sprintf(`{"error":%q}`, err.Error())}
+		return fmt.Sprintf(`{"error":%q}`, err.Error())
 	}
-	return res
-}
-
-// displayText 是 TUI 里显示的版本：图片只给一行摘要，绝不把 base64 打进终端。
-func displayText(res tools.Result) string {
-	if len(res.Images) == 0 {
-		return res.Text
-	}
-	var sb strings.Builder
-	sb.WriteString(res.Text)
-	for _, img := range res.Images {
-		fmt.Fprintf(&sb, "\n[图片 %s，约 %d KB]", img.MIME, len(img.Base64)*3/4/1024)
-	}
-	return sb.String()
-}
-
-// historyText 是写回会话的版本：告诉模型这一轮曾附带图片，但不再存图片本身。
-func historyText(res tools.Result) string {
-	if len(res.Images) == 0 {
-		return res.Text
-	}
-	return res.Text + fmt.Sprintf("\n[工具返回了 %d 张图片，已随本轮请求附上]", len(res.Images))
-}
-
-func functionCallOutput(callID string, res tools.Result) responses.ResponseInputItemUnionParam {
-	return responses.ResponseInputItemUnionParam{
-		OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
-			CallID: openai.String(callID),
-			Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
-				OfString: openai.String(historyText(res)),
-			},
-		},
-	}
-}
-
-// withImages 把待发送的图片临时挂到对应的 function_call_output 上，
-// 返回新的消息切片（不改动 session 里的历史）。
-func withImages(
-	items []responses.ResponseInputItemUnionParam,
-	images map[string][]tools.Image,
-) ([]responses.ResponseInputItemUnionParam, bool) {
-	if len(images) == 0 {
-		return items, false
-	}
-	out := make([]responses.ResponseInputItemUnionParam, len(items))
-	copy(out, items)
-	attached := false
-	for i, item := range out {
-		fco := item.OfFunctionCallOutput
-		if fco == nil || !fco.CallID.Valid() {
-			continue
-		}
-		imgs, ok := images[fco.CallID.Value]
-		if !ok || len(imgs) == 0 {
-			continue
-		}
-		parts := make(responses.ResponseFunctionCallOutputItemListParam, 0, len(imgs)+1)
-		if text := fco.Output.OfString.Value; strings.TrimSpace(text) != "" {
-			parts = append(parts, responses.ResponseFunctionCallOutputItemParamOfInputText(text))
-		}
-		for _, img := range imgs {
-			parts = append(parts, responses.ResponseFunctionCallOutputItemUnionParam{
-				OfInputImage: &responses.ResponseInputImageContentParam{
-					ImageURL: openai.String("data:" + img.MIME + ";base64," + img.Base64),
-					Detail:   responses.ResponseInputImageContentDetailAuto,
-				},
-			})
-		}
-		out[i].OfFunctionCallOutput = &responses.ResponseInputItemFunctionCallOutputParam{
-			CallID: fco.CallID,
-			Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
-				OfResponseFunctionCallOutputItemArray: parts,
-			},
-		}
-		attached = true
-	}
-	return out, attached
+	return out
 }
 
 // executePendingTool 审批通过后执行挂起的工具调用，写回 function_call_output，
@@ -313,16 +219,19 @@ func withImages(
 func (m Model) executePendingTool(p pendingTool) tea.Cmd {
 	session := m.session
 	llmTools := m.llmTools
-	pendingImages := m.pendingImages
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 		defer cancel()
-		res := runTool(ctx, llmTools, p.name, p.args)
-		if len(res.Images) > 0 {
-			pendingImages[p.callID] = res.Images
-		}
-		session.AddMessage(functionCallOutput(p.callID, res))
-		return toolDoneMsg{display: []chatMessage{{Role: "tool_result", Content: displayText(res)}}}
+		toolResult := runTool(ctx, llmTools, p.name, p.args)
+		session.AddMessage(responses.ResponseInputItemUnionParam{
+			OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
+				CallID: openai.String(p.callID),
+				Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
+					OfString: openai.String(toolResult),
+				},
+			},
+		})
+		return toolDoneMsg{display: []chatMessage{{Role: "tool_result", Content: toolResult}}}
 	}
 }
 

@@ -45,10 +45,6 @@ type Model struct {
 	pendingApproval *pendingTool
 	pendingQueue    []pendingTool
 
-	// pendingImages 暂存本轮工具返回的图片（callID → 图片），只在紧接着的一次请求里附上；
-	// 会话历史里始终只保留文本，避免 base64 每轮重复发送把上下文撑爆。
-	pendingImages map[string][]tools.Image
-
 	width  int
 	height int
 }
@@ -99,7 +95,6 @@ func initialModel(extraTools []*tools.ToolDef, skills []Skill, fileRoot, shellWo
 		newLoadSkillTool(skills, session, loadedSkills),
 	}
 	defs = append(defs, tools.NewFileTools(fileRoot)...)
-	defs = append(defs, tools.NewImageTools(fileRoot)...)
 	defs = append(defs, tools.NewCodeTools(fileRoot)...)
 	defs = append(defs, tools.NewPreviewTools(fileRoot)...)
 	defs = append(defs, tools.NewHTTPTool())
@@ -132,19 +127,18 @@ func initialModel(extraTools []*tools.ToolDef, skills []Skill, fileRoot, shellWo
 	)
 
 	return Model{
-		session:       session,
-		client:        client,
-		llmTools:      llmTools,
-		openaiTools:   openaiTools,
-		pendingImages: make(map[string][]tools.Image),
-		textarea:      ta,
-		viewport:      vp,
-		spinner:       sp,
-		messages:      []chatMessage{},
-		state:         stateIdle,
-		followBottom:  true,
-		skills:        skills,
-		loadedSkills:  loadedSkills,
+		session:      session,
+		client:       client,
+		llmTools:     llmTools,
+		openaiTools:  openaiTools,
+		textarea:     ta,
+		viewport:     vp,
+		spinner:      sp,
+		messages:     []chatMessage{},
+		state:        stateIdle,
+		followBottom: true,
+		skills:       skills,
+		loadedSkills: loadedSkills,
 	}
 }
 
